@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TMS Executive Dashboard & Return Scan - Jotun Logistics</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS (XLSX Parser) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- ZXing Barcode Scanner Library -->
+    <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest"></script>
+    <!-- FontAwesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- External CSS -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-[#f8fafc] text-slate-700 antialiased selection:bg-indigo-500 selection:text-white">
+
+    <div class="flex h-screen overflow-hidden">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="w-68 bg-slate-950 text-slate-300 hidden md:flex flex-col border-r border-slate-800/60 z-30 select-none">
+            <div class="p-6 flex items-center gap-3 border-b border-slate-900">
+                <div class="w-10 h-10 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-600/25">
+                    <i class="fa-solid fa-truck-ramp-box text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="text-sm font-bold text-white tracking-tight">TMS Platform</h2>
+                    <p class="text-[10px] text-slate-400 uppercase font-semibold tracking-wider">Logistics & Ticket</p>
+                </div>
+            </div>
+
+            <nav class="flex-1 px-3 py-4 space-y-1">
+                <a href="#" onclick="switchTab('overview')" id="navOverview" class="flex items-center gap-3.5 px-3.5 py-3 bg-indigo-600 text-white rounded-xl font-medium text-xs shadow-sm shadow-indigo-500/20 transition-all">
+                    <i class="fa-solid fa-chart-pie w-4 text-center"></i>
+                    <span>Overview Status & SLA</span>
+                </a>
+                <a href="#" onclick="switchTab('transporter')" id="navTransporter" class="flex items-center gap-3.5 px-3.5 py-3 hover:bg-slate-900 text-slate-400 hover:text-slate-100 rounded-xl font-medium text-xs transition-all">
+                    <i class="fa-solid fa-truck-moving w-4 text-center"></i>
+                    <span>Per Transporter</span>
+                </a>
+                <a href="#" onclick="switchTab('scan')" id="navScan" class="flex items-center gap-3.5 px-3.5 py-3 hover:bg-slate-900 text-slate-400 hover:text-slate-100 rounded-xl font-medium text-xs transition-all">
+                    <i class="fa-solid fa-barcode w-4 text-center"></i>
+                    <span>Scan Loket (Return)</span>
+                </a>
+                <a href="#" onclick="switchTab('archive')" id="navArchive" class="flex items-center gap-3.5 px-3.5 py-3 hover:bg-slate-900 text-slate-400 hover:text-slate-100 rounded-xl font-medium text-xs transition-all">
+                    <i class="fa-solid fa-cloud-arrow-down w-4 text-center"></i>
+                    <span>Arsip Kartu Harian</span>
+                </a>
+            </nav>
+
+            <div class="p-4 m-3 rounded-xl bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
+                <div class="flex items-center justify-between text-slate-300 font-semibold">
+                    <span>Database Status</span>
+                    <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                </div>
+                <p class="text-[10px] text-slate-400 leading-relaxed">Firebase Firestore tersambung realtime.</p>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 flex flex-col overflow-y-auto">
+            
+            <!-- Navbar Header -->
+            <header class="bg-white/80 backdrop-blur-md border-b border-slate-200/70 px-6 py-4 flex flex-col lg:flex-row justify-between items-center gap-4 sticky top-0 z-20">
+                <div>
+                    <h1 id="headerTitle" class="text-lg font-bold text-slate-900 tracking-tight">Status Pengiriman & Delivery Ticket</h1>
+                    <p id="headerSub" class="text-xs text-slate-400">Monitoring muatan, tracking SLA batas kirim, dan auto reminder Fonnte WhatsApp</p>
+                </div>
+                
+                <div class="flex items-center gap-2.5 w-full lg:w-auto justify-end flex-wrap">
+                    <label for="excelUpload" class="cursor-pointer bg-slate-900 hover:bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xs transition duration-200 flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel text-emerald-400"></i>
+                        <span>Upload Excel & Simpan</span>
+                    </label>
+                    <input type="file" id="excelUpload" accept=".xlsx, .xls, .csv" class="hidden">
+                    
+                    <button id="btnOpenReminder" onclick="openReminderModal()" disabled class="bg-slate-100 text-slate-400 cursor-not-allowed px-4 py-2.5 rounded-xl text-xs font-semibold transition flex items-center gap-2">
+                        <i class="fa-brands fa-whatsapp text-emerald-500 text-sm"></i>
+                        <span>Reminder WA (<span id="overdueCountBadge">0</span>)</span>
+                    </button>
+
+                    <button id="btnSaveCard" onclick="openSaveModal()" disabled class="bg-slate-100 text-slate-400 cursor-not-allowed px-4 py-2.5 rounded-xl text-xs font-semibold transition flex items-center gap-2">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>Ubah Judul Card</span>
+                    </button>
+
+                    <span id="statusBadge" class="text-xs bg-slate-100 text-slate-600 px-3 py-2 rounded-xl font-medium border border-slate-200/60 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                        <span>Belum ada data</span>
+                    </span>
+                </div>
+            </header>
+
+            <!-- TAB 1: OVERVIEW & SLA -->
+            <div id="tabOverview" class="p-6 md:p-8 space-y-6">
+                <!-- Filter Bar -->
+                <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex items-center gap-2.5 text-xs font-semibold text-slate-700">
+                        <div class="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
+                            <i class="fa-solid fa-sliders text-xs"></i>
+                        </div>
+                        <span>Filter Tanggal:</span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400 font-medium">Bulan:</span>
+                            <select id="filterMonth" onchange="applyDateFilters()" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                                <option value="ALL">Semua Bulan</option>
+                                <option value="01">Januari</option><option value="02">Februari</option><option value="03">Maret</option>
+                                <option value="04">April</option><option value="05">Mei</option><option value="06">Juni</option>
+                                <option value="07">Juli</option><option value="08">Agustus</option><option value="09">September</option>
+                                <option value="10">Oktober</option><option value="11">November</option><option value="12">Desember</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400 font-medium">Dari:</span>
+                            <input type="date" id="filterStartDate" onchange="applyDateFilters()" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400 font-medium">Sampai:</span>
+                            <input type="date" id="filterEndDate" onchange="applyDateFilters()" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                        </div>
+                        <button onclick="resetDateFilters()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold transition">
+                            Reset
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KPI Metric Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200/80 card-subtle-glow flex items-center justify-between">
+                        <div>
+                            <p class="text-[10px] font-bold tracking-wider uppercase text-slate-400">Total Shipment</p>
+                            <h3 id="statTotal" class="text-2xl font-extrabold text-slate-900 mt-1">0</h3>
+                            <span class="text-[11px] text-slate-400">Semua Tiket</span>
+                        </div>
+                        <div class="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-base border border-indigo-100/60">
+                            <i class="fa-solid fa-boxes-stacked"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200/80 card-subtle-glow flex items-center justify-between">
+                        <div>
+                            <p class="text-[10px] font-bold tracking-wider uppercase text-slate-400">Delivered</p>
+                            <h3 id="statDelivered" class="text-2xl font-extrabold text-emerald-600 mt-1">0</h3>
+                            <span class="text-[11px] text-emerald-600/80 font-medium">Selesai</span>
+                        </div>
+                        <div class="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base border border-emerald-100/60">
+                            <i class="fa-solid fa-circle-check"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200/80 card-subtle-glow flex items-center justify-between">
+                        <div>
+                            <p class="text-[10px] font-bold tracking-wider uppercase text-slate-400">On Delivery</p>
+                            <h3 id="statOnDelivery" class="text-2xl font-extrabold text-amber-500 mt-1">0</h3>
+                            <span class="text-[11px] text-amber-600/80 font-medium">Jalan</span>
+                        </div>
+                        <div class="w-11 h-11 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center text-base border border-amber-100/60">
+                            <i class="fa-solid fa-truck-fast"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-rose-200 card-subtle-glow flex items-center justify-between">
+                        <div>
+                            <p class="text-[10px] font-bold tracking-wider uppercase text-rose-500">Overdue SLA</p>
+                            <h3 id="statOverdue" class="text-2xl font-extrabold text-rose-600 mt-1">0</h3>
+                            <span class="text-[11px] text-rose-600/80 font-semibold cursor-pointer underline" onclick="openReminderModal()">Kirim WA Segera</span>
+                        </div>
+                        <div class="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-base border border-rose-200">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200/80 card-subtle-glow flex items-center justify-between">
+                        <div>
+                            <p class="text-[10px] font-bold tracking-wider uppercase text-slate-400">Canceled</p>
+                            <h3 id="statCanceled" class="text-2xl font-extrabold text-slate-500 mt-1">0</h3>
+                            <span class="text-[11px] text-slate-400">Batal</span>
+                        </div>
+                        <div class="w-11 h-11 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center text-base border border-slate-200">
+                            <i class="fa-solid fa-ban"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 card-subtle-glow flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-chart-pie text-indigo-600"></i> Proporsi Status Pengiriman
+                            </h3>
+                            <span class="text-[11px] text-slate-400">Live Breakdown</span>
+                        </div>
+                        <div class="relative h-72 flex justify-center items-center">
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 card-subtle-glow flex flex-col justify-between">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-chart-column text-indigo-600"></i> Top Vendor Transporter
+                            </h3>
+                            <span class="text-[11px] text-slate-400">Volume Muatan Tertinggi</span>
+                        </div>
+                        <div class="relative h-72 flex justify-center items-center">
+                            <canvas id="transporterChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table Section -->
+                <div id="table-section" class="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
+                    <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/50">
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-sm">Rincian Data Shipment, Surat Jalan & Status SLA</h3>
+                            <p class="text-xs text-slate-400 mt-0.5">Kolom SLA & Aging dihitung otomatis terhadap tanggal TTSJ</p>
+                        </div>
+                        <div class="flex items-center gap-3 w-full sm:w-auto">
+                            <div class="relative w-full sm:w-72">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                <input type="text" id="searchInput" placeholder="Cari TTSJ, transporter, status..." class="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none w-full">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto max-h-[520px]">
+                        <table class="w-full text-left border-collapse text-xs text-slate-600">
+                            <thead id="tableHeader" class="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] font-bold sticky top-0 z-10 border-b border-slate-200/80">
+                                <tr><th class="p-4 text-center text-slate-400">Silakan unggah berkas Excel terlebih dahulu</th></tr>
+                            </thead>
+                            <tbody id="tableBody" class="divide-y divide-slate-100 bg-white">
+                                <tr>
+                                    <td class="p-12 text-center text-slate-400">
+                                        <div class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400 text-lg">
+                                            <i class="fa-solid fa-file-arrow-up"></i>
+                                        </div>
+                                        <p class="font-medium">Belum ada data shipment.</p>
+                                        <p class="text-[11px] text-slate-400 mt-1">Gunakan tombol "Upload Excel & Simpan" di kanan atas.</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: TRANSPORTER ANALYTICS -->
+            <div id="tabTransporter" class="p-6 md:p-8 space-y-6 hidden">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900">Performa Transporter & Vendor</h2>
+                        <p class="text-xs text-slate-400">Tingkat keberhasilan kirim dan evaluasi SLA vendor</p>
+                    </div>
+                    <div class="w-full sm:w-72">
+                        <select id="transporterFilterSelect" onchange="filterTransporterDetail(this.value)" class="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                            <option value="ALL">Semua Transporter</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="transporterCardsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+            </div>
+
+            <!-- TAB 3: SCAN LOKET (RETURN) -->
+            <div id="tabScan" class="p-6 md:p-8 space-y-6 hidden">
+                <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900">Scan Pengembalian Delivery Ticket (Loket)</h2>
+                        <p class="text-xs text-slate-400">Scan barcode surat jalan / DT fisik untuk memperbarui status menjadi Returned secara otomatis</p>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <button onclick="startCameraScanner()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition flex items-center gap-2">
+                            <i class="fa-solid fa-camera"></i> Mulai Kamera Scanner
+                        </button>
+                        <button onclick="stopCameraScanner()" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold transition">
+                            Matikan Kamera
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Area Kamera & Simulator -->
+                    <div class="space-y-6">
+                        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 space-y-4">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-video text-indigo-600"></i> Kamera Barcode Reader
+                            </h3>
+                            <div class="bg-slate-950 rounded-2xl h-64 flex flex-col items-center justify-center text-slate-400 text-xs relative overflow-hidden">
+                                <video id="interactive" class="absolute inset-0 w-full h-full object-cover" autoplay muted playsinline></video>
+                                <div id="scannerPlaceholder" class="z-10 text-center p-4">
+                                    <i class="fa-solid fa-barcode text-3xl mb-2 text-slate-500"></i>
+                                    <p>Kamera belum aktif. Klik "Mulai Kamera Scanner".</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Barcode Simulator Cepat -->
+                        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 space-y-3">
+                            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                <i class="fa-solid fa-bolt text-amber-500"></i> Simulator Barcode Jotun
+                            </h3>
+                            <p class="text-xs text-slate-400">Jika tanpa kamera fisik, klik nomor DT sampel di bawah untuk mensimulasikan scan di loket:</p>
+                            <div id="sampleBarcodeList" class="flex flex-wrap gap-2 pt-1">
+                                <span class="text-xs text-slate-400">Muat file Excel terlebih dahulu untuk melihat sampel DT.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Log Hasil Scan -->
+                    <div class="bg-white p-6 rounded-3xl border border-slate-200/80 space-y-4 flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                    <i class="fa-solid fa-list-check text-emerald-600"></i> Log Riwayat Scan Loket
+                                </h3>
+                                <button onclick="clearScanLog()" class="text-[11px] text-slate-400 hover:text-slate-600">Bersihkan Log</button>
+                            </div>
+                            <div id="scanLogContainer" class="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs font-mono h-[380px] overflow-y-auto space-y-2.5">
+                                <div class="text-slate-400 italic">Belum ada barcode yang dipindai hari ini...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: CLOUD ARCHIVES -->
+            <div id="tabArchive" class="p-6 md:p-8 space-y-6 hidden">
+                <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex justify-between items-center">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-900">Koleksi Arsip Kartu Pengiriman</h2>
+                        <p class="text-xs text-slate-400">Riwayat pengiriman yang tersimpan di Firebase Firestore</p>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs font-semibold text-emerald-600 bg-emerald-50 px-3.5 py-2 rounded-xl border border-emerald-100">
+                        <i class="fa-solid fa-cloud-check"></i>
+                        <span>Firestore Connected</span>
+                    </div>
+                </div>
+
+                <div id="archiveGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- MODAL 1: WHATSAPP AUTO REMINDER OVERDUE SLA (FONNTE) -->
+    <div id="reminderModal" class="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg border border-emerald-100">
+                        <i class="fa-brands fa-whatsapp"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-900 text-sm">Fonnte Auto Reminder Overdue SLA</h3>
+                        <p class="text-[11px] text-slate-400">Kirim langsung ke grup WA ekspedisi beserta tautan portal update</p>
+                    </div>
+                </div>
+                <button onclick="closeReminderModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div id="reminderContent" class="flex-1 overflow-y-auto space-y-4 pr-1"></div>
+
+            <div class="flex justify-end pt-2 border-t border-slate-100">
+                <button onclick="closeReminderModal()" class="px-5 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: SAVE / RENAME CARD -->
+    <div id="saveModal" class="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 class="font-bold text-slate-900 text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-bookmark text-indigo-600"></i> Simpan / Ubah Judul Card
+                </h3>
+                <button onclick="closeSaveModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Nama Kartu Pengiriman</label>
+                <input type="text" id="archiveTitleInput" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+            </div>
+            <div class="bg-slate-50 p-4 rounded-2xl text-xs text-slate-600 space-y-1 border border-slate-200/60">
+                <div class="flex justify-between">
+                    <span class="text-slate-400">Total Baris:</span>
+                    <span id="modalTotalRows" class="font-bold text-slate-800">0 baris</span>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2.5 pt-1">
+                <button onclick="closeSaveModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 transition">Batal</button>
+                <button onclick="confirmManualSave()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition">Simpan Card</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- External Script JS -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update Status Delivery Ticket - TMS Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-[#f8fafc] text-slate-700 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-2xl mx-auto space-y-6">
+        
+        <!-- Header Vendor -->
+        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl font-bold border border-indigo-100">
+                <i class="fa-solid fa-truck-ramp-box"></i>
+            </div>
+            <div>
+                <span class="text-[11px] font-bold tracking-wider text-indigo-600 uppercase">TMS Delivery Update Portal</span>
+                <h1 id="vendorTitle" class="text-base font-bold text-slate-900 mt-0.5">Memuat data vendor...</h1>
+            </div>
+        </div>
+
+        <!-- Pemilihan TTSJ -->
+        <div class="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Pilih Nomor Surat Jalan (TTSJ):</label>
+                <select id="selectTTSJ" onchange="onTTSJSelected(this.value)" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+                    <option value="">-- Pilih TTSJ yang akan diupdate --</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Daftar Delivery Ticket (DT) -->
+        <div id="ticketContainer" class="hidden space-y-4">
+            <div class="flex justify-between items-center px-1">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Daftar Delivery Ticket (DT)</h3>
+                <span id="ticketCountBadge" class="text-[11px] bg-slate-200/60 text-slate-700 font-bold px-2.5 py-1 rounded-full">0 DT</span>
+            </div>
+
+            <div id="ticketList" class="space-y-3"></div>
+
+            <button onclick="saveUpdatedTickets()" id="btnSubmitUpdate" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-2xl shadow-xs transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+                <span>Simpan Perubahan Status ke TMS</span>
+            </button>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingBox" class="bg-white p-12 rounded-3xl border border-slate-200/80 text-center text-slate-400 space-y-2">
+            <i class="fa-solid fa-circle-notch fa-spin text-2xl text-indigo-600"></i>
+            <p class="text-xs font-medium">Menghubungkan ke database Firebase...</p>
+        </div>
+
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyB3cGe04xRlhvnN2Kx7xjX_ktGfLf-zQwI",
+            authDomain: "monitoring-delivery-369fb.firebaseapp.com",
+            projectId: "monitoring-delivery-369fb",
+            storageBucket: "monitoring-delivery-369fb.firebasestorage.app",
+            messagingSenderId: "951925658055",
+            appId: "1:951925658055:web:6df8a1367492fc2a2649e2",
+            measurementId: "G-MHC5GCH4Z1"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const docId = urlParams.get('docId');
+        const vendorName = urlParams.get('vendor') || 'Ekspedisi';
+
+        document.getElementById('vendorTitle').innerText = vendorName;
+
+        let fullShipmentData = [];
+        let groupedByTTSJ = {};
+
+        async function loadDocumentData() {
+            if (!docId) {
+                alert("Tautan tidak valid.");
+                document.getElementById('loadingBox').innerText = "Tautan tidak valid atau dokumen tidak ditemukan.";
+                return;
+            }
+
+            try {
+                const docSnap = await db.collection('tms_archives').doc(docId).get();
+                if (!docSnap.exists) {
+                    alert("Dokumen arsip tidak ditemukan di database.");
+                    return;
+                }
+
+                const data = docSnap.data();
+                if (data.sampleData) {
+                    fullShipmentData = JSON.parse(data.sampleData);
+                } else if (data.data) {
+                    fullShipmentData = data.data;
+                } else {
+                    fullShipmentData = [];
+                }
+
+                groupDataByTTSJ();
+                populateDropdown();
+                document.getElementById('loadingBox').classList.add('hidden');
+            } catch (err) {
+                console.error(err);
+                alert("Gagal memuat data dari cloud Firestore.");
+            }
+        }
+
+        function groupDataByTTSJ() {
+            groupedByTTSJ = {};
+            fullShipmentData.forEach((row, idx) => {
+                let ttsj = "LAINNYA";
+                for (let k in row) {
+                    if (k.toLowerCase().includes('ttsj')) {
+                        ttsj = String(row[k]).trim() || "LAINNYA";
+                        break;
+                    }
+                }
+
+                if (!groupedByTTSJ[ttsj]) {
+                    groupedByTTSJ[ttsj] = [];
+                }
+                groupedByTTSJ[ttsj].push({ originalIndex: idx, ...row });
+            });
+        }
+
+        function populateDropdown() {
+            const select = document.getElementById('selectTTSJ');
+            select.innerHTML = '<option value="">-- Pilih TTSJ yang akan diupdate --</option>';
+
+            Object.keys(groupedByTTSJ).forEach(ttsj => {
+                const count = groupedByTTSJ[ttsj].length;
+                const opt = document.createElement('option');
+                opt.value = ttsj;
+                opt.textContent = `${ttsj} (${count} Delivery Ticket)`;
+                select.appendChild(opt);
+            });
+        }
+
+        function onTTSJSelected(ttsj) {
+            const container = document.getElementById('ticketContainer');
+            const list = document.getElementById('ticketList');
+
+            if (!ttsj || !groupedByTTSJ[ttsj]) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            const tickets = groupedByTTSJ[ttsj];
+            document.getElementById('ticketCountBadge').innerText = `${tickets.length} DT`;
+
+            let html = '';
+            tickets.forEach((t, i) => {
+                let dtNumber = `DT #${i + 1}`;
+                let statusVal = "ON_DELIVERY";
+                let area = "-";
+
+                for (let k in t) {
+                    const lk = k.toLowerCase();
+                    if (lk.includes('ticket') || lk.includes('dt') || lk.includes('delivery order') || lk.includes('do')) {
+                        dtNumber = t[k] || dtNumber;
+                    }
+                    if (lk === 'status') {
+                        statusVal = String(t[k]).toUpperCase();
+                    }
+                    if (lk.includes('ship to') || lk.includes('area') || lk.includes('alamat')) {
+                        area = t[k];
+                    }
+                }
+
+                const isDelivered = statusVal.includes('DELIVERED');
+
+                html += `
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-3">
+                        <div>
+                            <span class="text-xs font-bold text-slate-800">${dtNumber}</span>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Tujuan: ${area}</p>
+                        </div>
+                        <div>
+                            <select data-index="${t.originalIndex}" class="status-selector px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold ${isDelivered ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-700 bg-amber-50 border-amber-200'} outline-none">
+                                <option value="ON_DELIVERY" ${!isDelivered ? 'selected' : ''}>ON_DELIVERY</option>
+                                <option value="DELIVERED" ${isDelivered ? 'selected' : ''}>DELIVERED</option>
+                            </select>
+                        </div>
+                    </div>
+                `;
+            });
+
+            list.innerHTML = html;
+            container.classList.remove('hidden');
+        }
+
+        async function saveUpdatedTickets() {
+            const btn = document.getElementById('btnSubmitUpdate');
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Menyimpan...`;
+
+            const selectors = document.querySelectorAll('.status-selector');
+            selectors.forEach(sel => {
+                const idx = parseInt(sel.getAttribute('data-index'));
+                const newStatus = sel.value;
+
+                for (let k in fullShipmentData[idx]) {
+                    if (k.toLowerCase() === 'status') {
+                        fullShipmentData[idx][k] = newStatus;
+                        break;
+                    }
+                }
+            });
+
+            let delivered = 0, onDelivery = 0, canceled = 0;
+            fullShipmentData.forEach(row => {
+                let s = "";
+                for (let k in row) {
+                    if (k.toLowerCase() === 'status') s = String(row[k]).toUpperCase();
+                }
+                if (s.includes('DELIVERED')) delivered++;
+                else if (s.includes('ON_DELIVERY')) onDelivery++;
+                else if (s.includes('CANCELED')) canceled++;
+            });
+
+            try {
+                await db.collection('tms_archives').doc(docId).update({
+                    delivered: delivered,
+                    onDelivery: onDelivery,
+                    canceled: canceled,
+                    sampleData: JSON.stringify(fullShipmentData),
+                    lastUpdatedByVendor: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                alert("Status pengiriman berhasil diperbarui ke database!");
+                location.reload();
+            } catch (err) {
+                console.error(err);
+                alert("Gagal menyimpan ke Firebase.");
+                btn.disabled = false;
+                btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Simpan Perubahan Status ke TMS`;
+            }
+        }
+
+        loadDocumentData();
+    </script>
+</body>
+</html>
