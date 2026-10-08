@@ -471,7 +471,6 @@ function populateSampleBarcodes() {
     }
 
     let html = '';
-    // Ambil sampel 10 nomor DT pertama dari dataset
     let count = 0;
     globalData.forEach(row => {
         if (count >= 10) return;
@@ -491,10 +490,11 @@ function populateSampleBarcodes() {
 }
 
 async function handleScannedBarcode(barcodeText) {
-    const cleanText = barcodeText.trim();
+    // 1. Bersihkan teks: Hapus kata "Lastpage" dan trim spasi agar murni kodenya saja (Misal: W20985568)
+    let cleanText = barcodeText.replace(/lastpage/gi, "").trim();
     let foundIndex = -1;
 
-    // Cari kecocokan barcode pada globalData (DT No atau Order No)
+    // 2. Cari kecocokan barcode pada globalData (DT No atau Order No)
     globalData.forEach((row, idx) => {
         for (let k in row) {
             let val = String(row[k]).trim();
@@ -558,7 +558,7 @@ async function handleScannedBarcode(barcodeText) {
 }
 
 function clearScanLog() {
-    document.getElementById('scanLogContainerമായി').innerHTML = `<div class="text-slate-400 italic">Log dibersihkan...</div>`;
+    document.getElementById('scanLogContainer').innerHTML = `<div class="text-slate-400 italic">Log dibersihkan...</div>`;
 }
 
 // ===================================================
